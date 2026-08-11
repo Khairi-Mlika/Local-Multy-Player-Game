@@ -1,1 +1,8 @@
+# ignore all the executables
 *.exe
+
+# ignore the bash scripts found in the bash directory
+bash
+
+# ignore the ENV file
+.ENV

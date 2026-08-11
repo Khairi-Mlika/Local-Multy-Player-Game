@@ -41,9 +41,14 @@ int main()
     }
 
     // sending to the server
-    std::string message = "ks 5alit ooredoo";
+    while (true)
+    {
+        std::string message;
+        std::cout << "type your message : ";
+        std::getline(std::cin, message);
 
-    send(mySock, message.c_str(), message.length(), 0);
+        send(mySock, message.c_str(), message.length(), 0);
+    }
 
     closesocket(mySock);
     WSACleanup();

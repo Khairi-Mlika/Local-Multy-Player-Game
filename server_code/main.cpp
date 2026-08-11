@@ -62,16 +62,20 @@ int main()
 
     // recieving message
     char buffer[1024];
-    result = recv(clientSocket , buffer , sizeof(buffer) , 0);
-    if (result == SOCKET_ERROR){
-        std::cout << "RECV::ERROR" << std::endl;
-        WSACleanup();
-        return 1;
-    }
+    while (true)
+    {
+        result = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (result == SOCKET_ERROR)
+        {
+            std::cout << "RECV::ERROR" << std::endl;
+            WSACleanup();
+            return 1;
+        }
 
-    // converting the char[n] into a std::string
-    std::string message(buffer , result);
-    std::cout << "client said : " << message << std::endl;
+        // converting the char[n] into a std::string
+        std::string message(buffer, result);
+        std::cout << "client said : " << message << std::endl;
+    }
 
     closesocket(TCPsocket);
     closesocket(clientSocket);
