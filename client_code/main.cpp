@@ -15,9 +15,9 @@ int main()
 
     int id;
 
-    std::cout << "Type your Id : " << std::endl;
+    std::cout << "Type your Id : ";
     std::cin >> id;
-    
+
     std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
     json data{{"id", id}};
@@ -62,11 +62,16 @@ int main()
         std::cout << "type your message : ";
         std::getline(std::cin, message);
 
+        if (message == "exit")
+        {
+            break;
+        }
+
         // add the message to the DATA json obkect
         data["message"] = message;
 
         std::string data_str = data.dump();
- 
+
         send(mySock, data_str.c_str(), data_str.length(), 0);
     }
 

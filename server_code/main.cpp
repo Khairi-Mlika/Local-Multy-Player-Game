@@ -1,12 +1,92 @@
 #include <iostream>
 
 #include <format>
+#include <thread>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
+
+int recvHandler(SOCKET clientSock);
+
+int acceptHandler(SOCKET tcpSock)
+{
+    while (true)
+    {
+        sockaddr_in clientAddr{};
+        int len = sizeof(clientAddr);
+
+        SOCKET clientSock = accept(tcpSock, (sockaddr *)&clientAddr, &len);
+        if (clientSock == INVALID_SOCKET)
+        {
+            std::cout << "SOCKET::ERROR::ACCEPT::THREAD" << std::endl;
+            WSAGetLastError();
+            continue;
+        }
+
+        std::thread recvThread(recvHandler, std::ref(clientSock));
+        recvThread.detach();
+    }
+
+    return 0;
+}
+
+int recvHandler(SOCKET clientSock)
+{
+    char buffer[2048];
+    bool first = true;
+
+    int clientId;
+
+    while (true)
+    {
+        int bytesRecieved = recv(clientSock, buffer, sizeof(buffer), 0);
+
+        if (bytesRecieved == SOCKET_ERROR)
+        {
+            std::cout << "RECV::THREAD::ERROR" << std::endl;
+            break;
+        }
+
+        if (bytesRecieved == 0)
+        {
+            if (first)
+            {
+                std::cout << "client disconnected before identification " << std::endl;
+            }
+            else
+            {
+                std::cout << std::format("client {} disconnected ", clientId) << std::endl;
+            }
+            break;
+        }
+
+        std::string data_str(buffer, bytesRecieved);
+
+        try
+        {
+
+            json data = json::parse(data_str);
+
+            if (first)
+            {
+                clientId = data["id"].get<int>();
+                first = false;
+            }
+
+            std::cout << std::format("client {} said : {} ", clientId, data["message"].get<std::string>()) << std::endl;
+        }
+        catch (const json::exception &e)
+        {
+            break;
+        }
+    }
+
+    closesocket(clientSock);
+    return 0;
+}
 
 int main()
 {
@@ -54,42 +134,11 @@ int main()
         return 1;
     }
 
-    // accepting client
-    sockaddr_in clientAddr{};
-    int len = sizeof(clientAddr);
-    SOCKET clientSocket = accept(TCPsocket, (sockaddr *)&clientAddr, &len);
-    if (clientSocket == INVALID_SOCKET)
-    {
-        std::cout << "ACCEPTIN::CLIENT::ERROR" << std::endl;
-        WSACleanup();
-        return 1;
-    }
+    std::thread acceptThread(acceptHandler, std::ref(TCPsocket));
 
-    // recieving message
-    char buffer[2048];
-    while (true)
-    {
-        result = recv(clientSocket, buffer, sizeof(buffer), 0);
-        if (result == SOCKET_ERROR)
-        {
-            std::cout << "RECV::ERROR" << std::endl;
-            WSACleanup();
-            return 1;
-        }
-
-        // converting the char[n] into a json object
-        std::string data_str(buffer, result);
-
-        json data = json::parse(data_str);
-
-        std::string display = std::format("client {} : {} \n",data["id"].get<int>(),data["message"].get<std::string>());
-
-        std::cout << display ;
-    }
+    acceptThread.join();
 
     closesocket(TCPsocket);
-    closesocket(clientSocket);
-
     WSACleanup();
 
     return 0;
