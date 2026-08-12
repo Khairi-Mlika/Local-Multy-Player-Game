@@ -1,7 +1,12 @@
 #include <iostream>
 
+#include <format>
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
+
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 int main()
 {
@@ -61,7 +66,7 @@ int main()
     }
 
     // recieving message
-    char buffer[1024];
+    char buffer[2048];
     while (true)
     {
         result = recv(clientSocket, buffer, sizeof(buffer), 0);
@@ -72,9 +77,14 @@ int main()
             return 1;
         }
 
-        // converting the char[n] into a std::string
-        std::string message(buffer, result);
-        std::cout << "client said : " << message << std::endl;
+        // converting the char[n] into a json object
+        std::string data_str(buffer, result);
+
+        json data = json::parse(data_str);
+
+        std::string display = std::format("client {} : {} \n",data["id"].get<int>(),data["message"].get<std::string>());
+
+        std::cout << display ;
     }
 
     closesocket(TCPsocket);

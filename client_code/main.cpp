@@ -1,11 +1,26 @@
 #include <iostream>
 
+// to use the int limits
+#include <limits>
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 int main()
 {
-    int result;
+    int result = 0;
+
+    int id;
+
+    std::cout << "Type your Id : " << std::endl;
+    std::cin >> id;
+    
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+    json data{{"id", id}};
 
     // init
     WSAData wsaData;
@@ -47,7 +62,12 @@ int main()
         std::cout << "type your message : ";
         std::getline(std::cin, message);
 
-        send(mySock, message.c_str(), message.length(), 0);
+        // add the message to the DATA json obkect
+        data["message"] = message;
+
+        std::string data_str = data.dump();
+ 
+        send(mySock, data_str.c_str(), data_str.length(), 0);
     }
 
     closesocket(mySock);
