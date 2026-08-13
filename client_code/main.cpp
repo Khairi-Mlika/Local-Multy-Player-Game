@@ -6,14 +6,44 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include "include/Player.hpp"
+
 #include <nlohmann/json.hpp>
+
 using json = nlohmann::json;
+
+void to_json(json &j, const Player &p)
+{
+    json position = json{
+        {"x", p.m_position.x},
+        {"y", p.m_position.y},
+        {"z", p.m_position.z},
+    };
+
+    j = json{
+        {"position", position},
+        {"yaw", p.m_yaw},
+    };
+}
+
+void from_json(const json &j, Player &p)
+{
+    j.at("position").at("x").get_to(p.m_position.x);
+    j.at("position").at("y").get_to(p.m_position.y);
+    j.at("position").at("z").get_to(p.m_position.z);
+
+    j.at("yaw").get_to(p.m_yaw);
+}
 
 int main()
 {
     int result = 0;
 
     int id;
+    Player myPlayer{};
+
+    myPlayer.m_position = {4.0f , 2.0f , 3.0f};
+    myPlayer.m_yaw = 60.f;
 
     std::cout << "Type your Id : ";
     std::cin >> id;
@@ -67,8 +97,8 @@ int main()
             break;
         }
 
-        // add the message to the DATA json obkect
-        data["message"] = message;
+        json player_json = myPlayer;
+        data["player"] = player_json;
 
         std::string data_str = data.dump();
 

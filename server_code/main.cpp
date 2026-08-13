@@ -6,8 +6,34 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include "include/Player.hpp"
+
 #include <nlohmann/json.hpp>
+
 using json = nlohmann::json;
+
+void to_json(json &j, const Player &p)
+{
+    json position = json{
+        {"x", p.m_position.x},
+        {"y", p.m_position.y},
+        {"z", p.m_position.z},
+    };
+
+    j = json{
+        {"position", position},
+        {"yaw", p.m_yaw},
+    };
+}
+
+void from_json(const json &j, Player &p)
+{
+    j.at("position").at("x").get_to(p.m_position.x);
+    j.at("position").at("y").get_to(p.m_position.y);
+    j.at("position").at("z").get_to(p.m_position.z);
+
+    j.at("yaw").get_to(p.m_yaw);
+}
 
 int recvHandler(SOCKET clientSock);
 
@@ -76,10 +102,21 @@ int recvHandler(SOCKET clientSock)
                 first = false;
             }
 
-            std::cout << std::format("client {} said : {} ", clientId, data["message"].get<std::string>()) << std::endl;
+            Player player{};
+            player = data["player"].get<Player>();
+
+            std::string display = std::format("Client {} | Position ({},{},{}) | Yaw {} ",
+                                              clientId,
+                                              player.m_position.x,
+                                              player.m_position.y,
+                                              player.m_position.z,
+                                              player.m_yaw);
+
+            std::cout << display << std::endl;
         }
         catch (const json::exception &e)
         {
+            std::cout << "PARSING::ERROR" << std::endl;
             break;
         }
     }
