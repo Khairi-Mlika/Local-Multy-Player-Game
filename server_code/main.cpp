@@ -2,6 +2,8 @@
 
 #include <format>
 #include <thread>
+#include <map>
+#include <cmath>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -11,6 +13,12 @@
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
+
+constexpr float PI = 3.14159265358979323846f;
+
+float SPEED = 1.0f;
+
+std::map<int, Player> ActivePlayers{};
 
 void to_json(json &j, const Player &p)
 {
@@ -33,6 +41,73 @@ void from_json(const json &j, Player &p)
     j.at("position").at("z").get_to(p.m_position.z);
 
     j.at("yaw").get_to(p.m_yaw);
+}
+
+enum class Movement
+{
+    MOVE_FORWARD,
+    MOVE_LEFT,
+    MOVE_RIGHT,
+    MOVE_BACK
+};
+
+std::string movement_to_string(const Movement &m)
+{
+    switch (m)
+    {
+    case Movement::MOVE_FORWARD:
+        return "MOVE_FORWARD";
+    case Movement::MOVE_RIGHT:
+        return "MOVE_RIGHT";
+    case Movement::MOVE_BACK:
+        return "MOVE_BACK";
+    case Movement::MOVE_LEFT:
+        return "MOVE_LEFT";
+    }
+    return "unknown";
+}
+
+float radians(float degrees)
+{
+    return degrees * PI / 180.0f;
+}
+
+float cleanFloat(float value)
+{
+    constexpr float epsilon = 0.000001f;
+
+    if (std::abs(value) < epsilon)
+        return 0.0f;
+
+    return value;
+}
+
+vec3 directionVector(const Movement &m, float yaw)
+{
+    vec3 vector{};
+    float yawRad = radians(yaw);
+
+    switch (m)
+    {
+    case Movement::MOVE_FORWARD:
+        vector = {std::sin(yawRad), 0.0f, -std::cos(yawRad)};
+        break;
+    case Movement::MOVE_RIGHT:
+        vector = {std::cos(yawRad), 0.0f, std::sin(yawRad)};
+        break;
+    case Movement::MOVE_BACK:
+        vector = {-std::sin(yawRad), 0.0f, +std::cos(yawRad)};
+        break;
+    case Movement::MOVE_LEFT:
+        vector = {-std::cos(yawRad), 0.0f, -std::sin(yawRad)};
+        break;
+    }
+
+    vector.x = cleanFloat(vector.x);
+    vector.y = cleanFloat(vector.y);
+    vector.z = cleanFloat(vector.z);
+
+    return vector;
 }
 
 int recvHandler(SOCKET clientSock);
@@ -66,6 +141,8 @@ int recvHandler(SOCKET clientSock)
 
     int clientId;
 
+    Player currentPlayer{};
+
     while (true)
     {
         int bytesRecieved = recv(clientSock, buffer, sizeof(buffer), 0);
@@ -93,7 +170,6 @@ int recvHandler(SOCKET clientSock)
 
         try
         {
-
             json data = json::parse(data_str);
 
             if (first)
@@ -102,18 +178,40 @@ int recvHandler(SOCKET clientSock)
                 first = false;
             }
 
-            Player player{};
-            player = data["player"].get<Player>();
+            Movement movement = data["movement"].get<Movement>();
+            float yaw = data["yaw"].get<float>();
 
-            std::string display = std::format("Client {} | Position ({},{},{}) | Yaw {} ",
+            currentPlayer.m_yaw = yaw;
+
+            vec3 direction = directionVector(movement, yaw);
+
+            switch (movement)
+            {
+            case Movement::MOVE_FORWARD:
+                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
+                break;
+            case Movement::MOVE_RIGHT:
+                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
+                break;
+            case Movement::MOVE_LEFT:
+                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
+                break;
+            case Movement::MOVE_BACK:
+                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
+                break;
+            }
+
+            std::string display = std::format("Client {} | {} | Yaw {} => Current Position ({},{},{}) ",
                                               clientId,
-                                              player.m_position.x,
-                                              player.m_position.y,
-                                              player.m_position.z,
-                                              player.m_yaw);
+                                              movement_to_string(movement),
+                                              yaw,
+                                              currentPlayer.m_position.x,
+                                              currentPlayer.m_position.y,
+                                              currentPlayer.m_position.z);
 
             std::cout << display << std::endl;
         }
+
         catch (const json::exception &e)
         {
             std::cout << "PARSING::ERROR" << std::endl;

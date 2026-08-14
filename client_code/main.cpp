@@ -35,6 +35,30 @@ void from_json(const json &j, Player &p)
     j.at("yaw").get_to(p.m_yaw);
 }
 
+enum class Movement
+{
+    MOVE_FORWARD,
+    MOVE_LEFT,
+    MOVE_RIGHT,
+    MOVE_BACK
+};
+
+std::string movement_to_string(const Movement &m)
+{
+    switch (m)
+    {
+    case Movement::MOVE_FORWARD:
+        return "MOVE_FORWARD";
+    case Movement::MOVE_LEFT:
+        return "MOVE_LEFT";
+    case Movement::MOVE_RIGHT:
+        return "MOVE_RIGHT";
+    case Movement::MOVE_BACK:
+        return "MOVE_BACK";
+    }
+    return "unknown";
+}
+
 int main()
 {
     int result = 0;
@@ -42,8 +66,8 @@ int main()
     int id;
     Player myPlayer{};
 
-    myPlayer.m_position = {4.0f , 2.0f , 3.0f};
-    myPlayer.m_yaw = 60.f;
+    myPlayer.m_position = {4.0f, 2.0f, 3.0f};
+    myPlayer.m_yaw = 90.f;
 
     std::cout << "Type your Id : ";
     std::cin >> id;
@@ -88,20 +112,40 @@ int main()
     // sending to the server
     while (true)
     {
-        std::string message;
-        std::cout << "type your message : ";
-        std::getline(std::cin, message);
+        std::string input;
+        std::cout << "==> ";
+        std::getline(std::cin, input);
 
-        if (message == "exit")
+        if (input == "exit")
         {
             break;
         }
 
-        json player_json = myPlayer;
-        data["player"] = player_json;
+        Movement movement;
+        if (input == "z")
+        {
+            movement = Movement::MOVE_FORWARD;
+        }
+        else if (input == "q")
+        {
+            movement = Movement::MOVE_LEFT;
+        }
+        else if (input == "d")
+        {
+            movement = Movement::MOVE_RIGHT;
+        }
+        else if (input == "s")
+        {
+            movement = Movement::MOVE_BACK;
+        }
+        else {
+            continue;
+        }
+
+        data["movement"] = movement;
+        data["yaw"] = myPlayer.m_yaw;
 
         std::string data_str = data.dump();
-
         send(mySock, data_str.c_str(), data_str.length(), 0);
     }
 
