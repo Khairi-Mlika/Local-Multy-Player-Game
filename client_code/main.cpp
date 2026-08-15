@@ -2,6 +2,7 @@
 
 // to use the int limits
 #include <limits>
+#include <format>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -63,18 +64,8 @@ int main()
 {
     int result = 0;
 
-    int id;
+    int id = 999;
     Player myPlayer{};
-
-    myPlayer.m_position = {4.0f, 2.0f, 3.0f};
-    myPlayer.m_yaw = 90.f;
-
-    std::cout << "Type your Id : ";
-    std::cin >> id;
-
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-
-    json data{{"id", id}};
 
     // init
     WSAData wsaData;
@@ -109,9 +100,44 @@ int main()
         return 1;
     }
 
+    char buffer[1024];
+
+    int bytesRecieved = recv(mySock, buffer, sizeof(buffer), 0);
+    if (bytesRecieved == SOCKET_ERROR)
+    {
+        std::cout << "ID::RECV::ERROR" << std::endl;
+        closesocket(mySock);
+        WSACleanup();
+    }
+
+    std::string recvData_str(buffer, bytesRecieved);
+    json data;
+
+    try
+    {
+        json recvData = json::parse(recvData_str);
+
+        id = recvData["id"].get<int>();
+        data["player"] = recvData["player"].get<Player>();
+
+        myPlayer = data["player"].get<Player>();
+    }
+    catch (json::exception &e)
+    {
+        std::cout << "PARSING::ERROR" << std::endl;
+        closesocket(mySock);
+        WSACleanup();
+
+        return 1;
+    }
+
+    std::string init = std::format("init => position : ({},{},{}) | yaw : {} ", myPlayer.m_position.x, myPlayer.m_position.y, myPlayer.m_position.z, myPlayer.m_yaw);
+    std::cout << init << std::endl;
+
     // sending to the server
     while (true)
     {
+
         std::string input;
         std::cout << "==> ";
         std::getline(std::cin, input);
@@ -138,7 +164,8 @@ int main()
         {
             movement = Movement::MOVE_BACK;
         }
-        else {
+        else
+        {
             continue;
         }
 
@@ -146,7 +173,13 @@ int main()
         data["yaw"] = myPlayer.m_yaw;
 
         std::string data_str = data.dump();
-        send(mySock, data_str.c_str(), data_str.length(), 0);
+
+        result = send(mySock, data_str.c_str(), data_str.length(), 0);
+        if (result == SOCKET_ERROR)
+        {
+            std::cout << "SENDING::ERROR" << std::endl;
+            break;
+        }
     }
 
     closesocket(mySock);

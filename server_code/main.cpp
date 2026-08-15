@@ -14,9 +14,9 @@
 
 using json = nlohmann::json;
 
-constexpr float PI = 3.14159265358979323846f;
-
 float SPEED = 1.0f;
+
+int LastClientId = 0;
 
 std::map<int, Player> ActivePlayers{};
 
@@ -67,6 +67,8 @@ std::string movement_to_string(const Movement &m)
     return "unknown";
 }
 
+constexpr float PI = 3.14159265358979323846f;
+
 float radians(float degrees)
 {
     return degrees * PI / 180.0f;
@@ -110,7 +112,7 @@ vec3 directionVector(const Movement &m, float yaw)
     return vector;
 }
 
-int recvHandler(SOCKET clientSock);
+int recvHandler(SOCKET clientSock, int clientId);
 
 int acceptHandler(SOCKET tcpSock)
 {
@@ -127,21 +129,34 @@ int acceptHandler(SOCKET tcpSock)
             continue;
         }
 
-        std::thread recvThread(recvHandler, std::ref(clientSock));
+        Player currentPlayer{};
+
+        ActivePlayers[LastClientId] = currentPlayer;
+
+        json data = {{"id", LastClientId}, {"player", currentPlayer}};
+        std::string data_str = data.dump();
+
+        int result = send(clientSock, data_str.c_str(), data_str.length(), 0);
+        if (result == SOCKET_ERROR)
+        {
+            std::cout << "ID::SENDING::ERROR" << std::endl;
+            continue;
+        }
+
+        std::thread recvThread(recvHandler, std::ref(clientSock), LastClientId);
         recvThread.detach();
+
+        LastClientId++;
     }
 
     return 0;
 }
 
-int recvHandler(SOCKET clientSock)
+int recvHandler(SOCKET clientSock, int clientId)
 {
     char buffer[2048];
-    bool first = true;
 
-    int clientId;
-
-    Player currentPlayer{};
+    Player currentPlayer = ActivePlayers[clientId];
 
     while (true)
     {
@@ -150,19 +165,17 @@ int recvHandler(SOCKET clientSock)
         if (bytesRecieved == SOCKET_ERROR)
         {
             std::cout << "RECV::THREAD::ERROR" << std::endl;
+            ActivePlayers.erase(clientId);
+            LastClientId = ActivePlayers.rbegin()->first + 1;
             break;
         }
 
         if (bytesRecieved == 0)
         {
-            if (first)
-            {
-                std::cout << "client disconnected before identification " << std::endl;
-            }
-            else
-            {
-                std::cout << std::format("client {} disconnected ", clientId) << std::endl;
-            }
+
+            std::cout << std::format("client {} disconnected ", clientId) << std::endl;
+            ActivePlayers.erase(clientId);
+            LastClientId = ActivePlayers.rbegin()->first + 1;
             break;
         }
 
@@ -171,12 +184,6 @@ int recvHandler(SOCKET clientSock)
         try
         {
             json data = json::parse(data_str);
-
-            if (first)
-            {
-                clientId = data["id"].get<int>();
-                first = false;
-            }
 
             Movement movement = data["movement"].get<Movement>();
             float yaw = data["yaw"].get<float>();
