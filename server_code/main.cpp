@@ -4,6 +4,7 @@
 #include <thread>
 #include <map>
 #include <cmath>
+#include <mutex>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -19,6 +20,9 @@ float SPEED = 1.0f;
 int LastClientId = 0;
 
 std::map<int, Player> ActivePlayers{};
+std::map<int, SOCKET> ActiveClients{};
+
+std::mutex playersMutex;
 
 void to_json(json &j, const Player &p)
 {
@@ -129,9 +133,15 @@ int acceptHandler(SOCKET tcpSock)
             continue;
         }
 
+        playersMutex.lock();
+
         int id = LastClientId;
+        LastClientId++;
 
         ActivePlayers[id] = Player();
+        ActiveClients[id] = clientSock;
+
+        playersMutex.unlock();
 
         json data = {{"id", id}, {"player", ActivePlayers[id]}};
         std::string data_str = data.dump();
@@ -145,8 +155,6 @@ int acceptHandler(SOCKET tcpSock)
 
         std::thread recvThread(recvHandler, clientSock, id);
         recvThread.detach();
-
-        LastClientId++;
     }
 
     return 0;
@@ -165,7 +173,10 @@ int recvHandler(SOCKET clientSock, int clientId)
         if (bytesRecieved == SOCKET_ERROR)
         {
             std::cout << "RECV::THREAD::ERROR" << std::endl;
+
+            playersMutex.lock();
             ActivePlayers.erase(clientId);
+            ActiveClients.erase(clientId);
             if (ActivePlayers.empty())
             {
                 LastClientId = 0;
@@ -174,6 +185,7 @@ int recvHandler(SOCKET clientSock, int clientId)
             {
                 LastClientId = ActivePlayers.rbegin()->first + 1;
             }
+            playersMutex.unlock();
 
             break;
         }
@@ -182,8 +194,10 @@ int recvHandler(SOCKET clientSock, int clientId)
         {
 
             std::cout << std::format("client {} disconnected ", clientId) << std::endl;
-            ActivePlayers.erase(clientId);
 
+            playersMutex.lock();
+            ActivePlayers.erase(clientId);
+            ActiveClients.erase(clientId);
             if (ActivePlayers.empty())
             {
                 LastClientId = 0;
@@ -192,6 +206,7 @@ int recvHandler(SOCKET clientSock, int clientId)
             {
                 LastClientId = ActivePlayers.rbegin()->first + 1;
             }
+            playersMutex.unlock();
 
             break;
         }
@@ -201,7 +216,6 @@ int recvHandler(SOCKET clientSock, int clientId)
         try
         {
             json data = json::parse(data_str);
-
             Movement movement = data["movement"].get<Movement>();
             float yaw = data["yaw"].get<float>();
 
@@ -293,11 +307,9 @@ int main()
         return 1;
     }
 
-        std::thread acceptThread(acceptHandler, std::ref(TCPsocket));
+    std::thread acceptThread(acceptHandler, std::ref(TCPsocket));
 
-        acceptThread.join();
-
-    
+    acceptThread.join();
 
     closesocket(TCPsocket);
     WSACleanup();
