@@ -129,11 +129,11 @@ int acceptHandler(SOCKET tcpSock)
             continue;
         }
 
-        Player currentPlayer{};
+        int id = LastClientId;
 
-        ActivePlayers[LastClientId] = currentPlayer;
+        ActivePlayers[id] = Player();
 
-        json data = {{"id", LastClientId}, {"player", currentPlayer}};
+        json data = {{"id", id}, {"player", ActivePlayers[id]}};
         std::string data_str = data.dump();
 
         int result = send(clientSock, data_str.c_str(), data_str.length(), 0);
@@ -143,7 +143,7 @@ int acceptHandler(SOCKET tcpSock)
             continue;
         }
 
-        std::thread recvThread(recvHandler, std::ref(clientSock), LastClientId);
+        std::thread recvThread(recvHandler, clientSock, id);
         recvThread.detach();
 
         LastClientId++;
@@ -156,7 +156,7 @@ int recvHandler(SOCKET clientSock, int clientId)
 {
     char buffer[2048];
 
-    Player currentPlayer = ActivePlayers[clientId];
+    Player &currentPlayer = ActivePlayers[clientId];
 
     while (true)
     {
@@ -166,7 +166,15 @@ int recvHandler(SOCKET clientSock, int clientId)
         {
             std::cout << "RECV::THREAD::ERROR" << std::endl;
             ActivePlayers.erase(clientId);
-            LastClientId = ActivePlayers.rbegin()->first + 1;
+            if (ActivePlayers.empty())
+            {
+                LastClientId = 0;
+            }
+            else
+            {
+                LastClientId = ActivePlayers.rbegin()->first + 1;
+            }
+
             break;
         }
 
@@ -175,7 +183,16 @@ int recvHandler(SOCKET clientSock, int clientId)
 
             std::cout << std::format("client {} disconnected ", clientId) << std::endl;
             ActivePlayers.erase(clientId);
-            LastClientId = ActivePlayers.rbegin()->first + 1;
+
+            if (ActivePlayers.empty())
+            {
+                LastClientId = 0;
+            }
+            else
+            {
+                LastClientId = ActivePlayers.rbegin()->first + 1;
+            }
+
             break;
         }
 
@@ -276,9 +293,11 @@ int main()
         return 1;
     }
 
-    std::thread acceptThread(acceptHandler, std::ref(TCPsocket));
+        std::thread acceptThread(acceptHandler, std::ref(TCPsocket));
 
-    acceptThread.join();
+        acceptThread.join();
+
+    
 
     closesocket(TCPsocket);
     WSACleanup();
