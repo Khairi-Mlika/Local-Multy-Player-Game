@@ -13,6 +13,8 @@
 
 using json = nlohmann::json;
 
+std::map<int, Player> players{};
+
 void to_json(json &j, const Player &p)
 {
     json position = json{
@@ -134,6 +136,7 @@ int main()
     std::string init = std::format("init => position : ({},{},{}) | yaw : {} ", myPlayer.m_position.x, myPlayer.m_position.y, myPlayer.m_position.z, myPlayer.m_yaw);
     std::cout << init << std::endl;
 
+    json playersInfo;
     // sending to the server
     while (true)
     {
@@ -179,6 +182,34 @@ int main()
         {
             std::cout << "SENDING::ERROR" << std::endl;
             break;
+        }
+
+        int bytesRecieved = recv(mySock, buffer, sizeof(buffer), 0);
+        if (result == SOCKET_ERROR)
+        {
+            break;
+        }
+
+        std::string recv_data_str(buffer, bytesRecieved);
+
+        try
+        {
+            playersInfo = json::parse(recv_data_str);
+            players = playersInfo.get<std::map<int, Player>>();
+            std::string output;
+            for (const auto &[id, player] : players)
+            {
+                output = std::format("player {} | position ({},{},{})",
+                                     id,
+                                     player.m_position.x,
+                                     player.m_position.y,
+                                     player.m_position.z);
+
+                std::cout << output << std::endl;
+            }
+        }
+        catch (json::exception &e)
+        {
         }
     }
 

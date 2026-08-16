@@ -12,17 +12,11 @@
 #include "include/Player.hpp"
 
 #include <nlohmann/json.hpp>
-
 using json = nlohmann::json;
 
-float SPEED = 1.0f;
-
-int LastClientId = 0;
-
-std::map<int, Player> ActivePlayers{};
-std::map<int, SOCKET> ActiveClients{};
-
-std::mutex playersMutex;
+//==============================================================
+// JSON UTILITY FUNCTIONS
+//==============================================================
 
 void to_json(json &j, const Player &p)
 {
@@ -47,6 +41,9 @@ void from_json(const json &j, Player &p)
     j.at("yaw").get_to(p.m_yaw);
 }
 
+//==============================================================
+// MOVEMENT UTILITY FUNCTIONS
+//==============================================================
 enum class Movement
 {
     MOVE_FORWARD,
@@ -70,6 +67,30 @@ std::string movement_to_string(const Movement &m)
     }
     return "unknown";
 }
+
+//==============================================================
+// PLAYER INPUT CLASS IMPLEMENTATION
+//==============================================================
+class PlayerInput
+{
+public:
+    Movement m_movement{};
+    float m_yaw{};
+
+public:
+    PlayerInput()
+    {
+    }
+    PlayerInput(Movement movement, float yaw)
+    {
+        m_movement = movement;
+        m_yaw = yaw;
+    }
+};
+
+//==============================================================
+// MOVEMENT LOGIQUE AND HELPER FUNCTIONS
+//==============================================================
 
 constexpr float PI = 3.14159265358979323846f;
 
@@ -116,6 +137,30 @@ vec3 directionVector(const Movement &m, float yaw)
     return vector;
 }
 
+//==============================================================
+// SERVER GLOBAL VARIABLES AND CONSTS
+//==============================================================
+
+float SPEED = 1.0f;
+
+const float TICK_RATE = 60.0f;
+const float TICK_TIME = 1 / TICK_RATE;
+
+float DT{};
+
+int LastClientId = 0;
+
+std::map<int, PlayerInput> playersInput{};
+
+std::map<int, Player> activePlayers{};
+std::map<int, SOCKET> activeClients{};
+
+std::mutex playersMutex{};
+
+//==============================================================
+// SERVER HANDLER FUNCTIONS
+//==============================================================
+
 int recvHandler(SOCKET clientSock, int clientId);
 
 int acceptHandler(SOCKET tcpSock)
@@ -141,10 +186,10 @@ int acceptHandler(SOCKET tcpSock)
 
             id = LastClientId++;
 
-            ActivePlayers[id] = Player();
-            ActiveClients[id] = clientSock;
+            activePlayers[id] = Player();
+            activeClients[id] = clientSock;
 
-            data = {{"id", id}, {"player", ActivePlayers.at(id)}};
+            data = {{"id", id}, {"player", activePlayers.at(id)}};
         }
 
         std::string data_str = data.dump();
@@ -166,7 +211,6 @@ int acceptHandler(SOCKET tcpSock)
 int recvHandler(SOCKET clientSock, int clientId)
 {
     char buffer[2048];
-    Player &currentPlayer = ActivePlayers.at(clientId);
 
     while (true)
     {
@@ -178,16 +222,17 @@ int recvHandler(SOCKET clientSock, int clientId)
             {
                 std::lock_guard<std::mutex> lock(playersMutex);
 
-                ActivePlayers.erase(clientId);
-                ActiveClients.erase(clientId);
+                activePlayers.erase(clientId);
+                activeClients.erase(clientId);
+                playersInput.erase(clientId);
 
-                if (ActivePlayers.empty())
+                if (activePlayers.empty())
                 {
                     LastClientId = 0;
                 }
                 else
                 {
-                    LastClientId = ActivePlayers.rbegin()->first + 1;
+                    LastClientId = activePlayers.rbegin()->first + 1;
                 }
             }
             break;
@@ -200,16 +245,17 @@ int recvHandler(SOCKET clientSock, int clientId)
             {
                 std::lock_guard<std::mutex> lock(playersMutex);
 
-                ActivePlayers.erase(clientId);
-                ActiveClients.erase(clientId);
+                activePlayers.erase(clientId);
+                activeClients.erase(clientId);
+                playersInput.erase(clientId);
 
-                if (ActivePlayers.empty())
+                if (activePlayers.empty())
                 {
                     LastClientId = 0;
                 }
                 else
                 {
-                    LastClientId = ActivePlayers.rbegin()->first + 1;
+                    LastClientId = activePlayers.rbegin()->first + 1;
                 }
             }
             break;
@@ -220,38 +266,12 @@ int recvHandler(SOCKET clientSock, int clientId)
         try
         {
             json data = json::parse(data_str);
+
             Movement movement = data["movement"].get<Movement>();
             float yaw = data["yaw"].get<float>();
 
-            currentPlayer.m_yaw = yaw;
-
-            vec3 direction = directionVector(movement, yaw);
-
-            switch (movement)
-            {
-            case Movement::MOVE_FORWARD:
-                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
-                break;
-            case Movement::MOVE_RIGHT:
-                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
-                break;
-            case Movement::MOVE_LEFT:
-                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
-                break;
-            case Movement::MOVE_BACK:
-                currentPlayer.m_position = currentPlayer.m_position + direction * SPEED;
-                break;
-            }
-
-            std::string display = std::format("Client {} | {} | Yaw {} => Current Position ({},{},{}) ",
-                                              clientId,
-                                              movement_to_string(movement),
-                                              yaw,
-                                              currentPlayer.m_position.x,
-                                              currentPlayer.m_position.y,
-                                              currentPlayer.m_position.z);
-
-            std::cout << display << std::endl;
+            std::lock_guard<std::mutex> lock(playersMutex);
+            playersInput[clientId] = PlayerInput(movement, yaw);
         }
 
         catch (const json::exception &e)
@@ -264,6 +284,67 @@ int recvHandler(SOCKET clientSock, int clientId)
     closesocket(clientSock);
     return 0;
 }
+
+void inputHandler()
+{
+    std::map<int, PlayerInput> playersInputCopy;
+    {
+        std::lock_guard<std::mutex> lock(playersMutex);
+        playersInputCopy = playersInput;
+        playersInput.clear();
+    }
+
+    if (playersInputCopy.empty()){
+        return;
+    }
+
+    for (auto &[id, playerInput] : playersInputCopy)
+    {
+        std::string display;
+        {
+            std::lock_guard<std::mutex> lock(playersMutex);
+
+            Player &currentPlayer = activePlayers.at(id);
+
+            vec3 direction = directionVector(playerInput.m_movement, playerInput.m_yaw);
+            currentPlayer.m_position = currentPlayer.m_position + direction * SPEED * DT;
+
+            display = std::format("Client {} | {} | Yaw {} => Current Position ({},{},{}) ",
+                                  id,
+                                  movement_to_string(playerInput.m_movement),
+                                  playerInput.m_yaw,
+                                  currentPlayer.m_position.x,
+                                  currentPlayer.m_position.y,
+                                  currentPlayer.m_position.z);
+        }
+        std::cout << display << std::endl;
+    }
+}
+
+void broadcastHandler()
+{
+    int result;
+    json data;
+    std::map<int, SOCKET> activeClientsCopy;
+    {
+        std::lock_guard<std::mutex> lock(playersMutex);
+        activeClientsCopy = activeClients;
+        data["players"] = activePlayers;
+    }
+    std::string data_str = data.dump();
+    for (auto &[id, clientSock] : activeClientsCopy)
+    {
+        result = send(clientSock, data_str.c_str(), data_str.length(), 0);
+        if (result == SOCKET_ERROR)
+        {
+            continue;
+        }
+    }
+}
+
+//==============================================================
+//==============================================================
+//==============================================================
 
 int main()
 {
@@ -312,6 +393,29 @@ int main()
     }
 
     std::thread acceptThread(acceptHandler, std::ref(TCPsocket));
+
+    auto previous_time = std::chrono::steady_clock::now();
+
+    while (true)
+    {
+        auto current_time = std::chrono::steady_clock::now();
+        DT = std::chrono::duration<float>(current_time - previous_time).count();
+        previous_time = current_time;
+
+        auto tick_start = std::chrono::steady_clock::now();
+
+        inputHandler();
+        broadcastHandler();
+
+        auto tick_end = std::chrono::steady_clock::now();
+        float tickDuration = std::chrono::duration<float>(tick_end - tick_start).count();
+        float sleepTime = TICK_TIME - tickDuration;
+        if (sleepTime > 0.0f)
+        {
+            std::this_thread::sleep_for(std::chrono::duration<float>(sleepTime));
+        }
+    }
+
     acceptThread.join();
 
     closesocket(TCPsocket);
