@@ -249,6 +249,12 @@ int acceptHandler(SOCKET tcpSock)
         if (result == SOCKET_ERROR)
         {
             std::cout << "ID::SENDING::ERROR" << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(playersMutex);
+                activePlayers.erase(id);
+                activeClients.erase(id);
+            }
+            closesocket(clientSock);
             continue;
         }
 
@@ -371,7 +377,8 @@ void inputHandler()
         playersInput.clear();
     }
 
-    if (playersInputCopy.empty()){
+    if (playersInputCopy.empty())
+    {
         return;
     }
 
@@ -425,8 +432,14 @@ void broadcastHandler()
         result = send(clientSock, data_str.c_str(), data_str.length(), 0);
         if (result == SOCKET_ERROR)
         {
-            // Note: a failed send here is silently ignored — the client
-            // just misses this tick's update rather than being dropped.
+            {
+                std::lock_guard<std::mutex> lock(playersMutex);
+
+                activeClients.erase(id);
+                activePlayers.erase(id);
+            }
+
+            closesocket(clientSock);
             continue;
         }
     }
@@ -467,6 +480,7 @@ int main()
     if (result == SOCKET_ERROR)
     {
         std::cout << "BINDING::ERROR" << std::endl;
+        closesocket(TCPsocket);
         WSACleanup();
         return 1;
     }
@@ -477,6 +491,7 @@ int main()
     if (result == SOCKET_ERROR)
     {
         std::cout << "LISTENING::ERROR" << std::endl;
+        closesocket(TCPsocket);
         WSACleanup();
         return 1;
     }
