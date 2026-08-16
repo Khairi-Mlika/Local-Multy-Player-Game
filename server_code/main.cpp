@@ -120,6 +120,9 @@ int recvHandler(SOCKET clientSock, int clientId);
 
 int acceptHandler(SOCKET tcpSock)
 {
+    int id;
+    json data;
+
     while (true)
     {
         sockaddr_in clientAddr{};
@@ -133,17 +136,17 @@ int acceptHandler(SOCKET tcpSock)
             continue;
         }
 
-        playersMutex.lock();
+        {
+            std::lock_guard<std::mutex> lock(playersMutex);
 
-        int id = LastClientId;
-        LastClientId++;
+            id = LastClientId++;
 
-        ActivePlayers[id] = Player();
-        ActiveClients[id] = clientSock;
+            ActivePlayers[id] = Player();
+            ActiveClients[id] = clientSock;
 
-        playersMutex.unlock();
+            data = {{"id", id}, {"player", ActivePlayers.at(id)}};
+        }
 
-        json data = {{"id", id}, {"player", ActivePlayers[id]}};
         std::string data_str = data.dump();
 
         int result = send(clientSock, data_str.c_str(), data_str.length(), 0);
@@ -163,8 +166,7 @@ int acceptHandler(SOCKET tcpSock)
 int recvHandler(SOCKET clientSock, int clientId)
 {
     char buffer[2048];
-
-    Player &currentPlayer = ActivePlayers[clientId];
+    Player &currentPlayer = ActivePlayers.at(clientId);
 
     while (true)
     {
@@ -173,20 +175,21 @@ int recvHandler(SOCKET clientSock, int clientId)
         if (bytesRecieved == SOCKET_ERROR)
         {
             std::cout << "RECV::THREAD::ERROR" << std::endl;
-
-            playersMutex.lock();
-            ActivePlayers.erase(clientId);
-            ActiveClients.erase(clientId);
-            if (ActivePlayers.empty())
             {
-                LastClientId = 0;
-            }
-            else
-            {
-                LastClientId = ActivePlayers.rbegin()->first + 1;
-            }
-            playersMutex.unlock();
+                std::lock_guard<std::mutex> lock(playersMutex);
 
+                ActivePlayers.erase(clientId);
+                ActiveClients.erase(clientId);
+
+                if (ActivePlayers.empty())
+                {
+                    LastClientId = 0;
+                }
+                else
+                {
+                    LastClientId = ActivePlayers.rbegin()->first + 1;
+                }
+            }
             break;
         }
 
@@ -194,20 +197,21 @@ int recvHandler(SOCKET clientSock, int clientId)
         {
 
             std::cout << std::format("client {} disconnected ", clientId) << std::endl;
-
-            playersMutex.lock();
-            ActivePlayers.erase(clientId);
-            ActiveClients.erase(clientId);
-            if (ActivePlayers.empty())
             {
-                LastClientId = 0;
-            }
-            else
-            {
-                LastClientId = ActivePlayers.rbegin()->first + 1;
-            }
-            playersMutex.unlock();
+                std::lock_guard<std::mutex> lock(playersMutex);
 
+                ActivePlayers.erase(clientId);
+                ActiveClients.erase(clientId);
+
+                if (ActivePlayers.empty())
+                {
+                    LastClientId = 0;
+                }
+                else
+                {
+                    LastClientId = ActivePlayers.rbegin()->first + 1;
+                }
+            }
             break;
         }
 
@@ -308,7 +312,6 @@ int main()
     }
 
     std::thread acceptThread(acceptHandler, std::ref(TCPsocket));
-
     acceptThread.join();
 
     closesocket(TCPsocket);
