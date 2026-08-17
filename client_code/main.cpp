@@ -62,6 +62,27 @@ std::string movement_to_string(const Movement &m)
     return "unknown";
 }
 
+bool recvAll(SOCKET socket, char *buffer, int size)
+{
+    int received = 0;
+
+    while (received < size)
+    {
+        int result = recv(
+            socket,
+            buffer + received,
+            size - received,
+            0);
+
+        if (result <= 0)
+            return false;
+
+        received += result;
+    }
+
+    return true;
+}
+
 int main()
 {
     int result = 0;
@@ -184,33 +205,30 @@ int main()
             break;
         }
 
-        int bytesRecieved = recv(mySock, buffer, sizeof(buffer), 0);
-        if (result == SOCKET_ERROR)
+        uint32_t size;
+
+        if (!recvAll(
+                mySock,
+                reinterpret_cast<char *>(&size),
+                sizeof(size)))
         {
             break;
         }
 
-        std::string recv_data_str(buffer, bytesRecieved);
+        size = ntohl(size);
 
-        try
-        {
-            playersInfo = json::parse(recv_data_str);
-            players = playersInfo.get<std::map<int, Player>>();
-            std::string output;
-            for (const auto &[id, player] : players)
-            {
-                output = std::format("player {} | position ({},{},{})",
-                                     id,
-                                     player.m_position.x,
-                                     player.m_position.y,
-                                     player.m_position.z);
+        char rcv_buffer[2048];
 
-                std::cout << output << std::endl;
-            }
-        }
-        catch (json::exception &e)
+        if (!recvAll(
+                mySock,
+                rcv_buffer,
+                size))
         {
+            break;
         }
+
+        std::string recv_data_str(rcv_buffer, size);
+        std::cout << recv_data_str << std::endl;
     }
 
     closesocket(mySock);

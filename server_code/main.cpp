@@ -282,7 +282,22 @@ int recvHandler(SOCKET clientSock, int clientId)
 
         if (bytesRecieved == SOCKET_ERROR)
         {
-            std::cout << "RECV::THREAD::ERROR" << std::endl;
+            int error = WSAGetLastError();
+
+            if (error == WSAECONNRESET)
+            {
+                std::cout << std::format(
+                    "client {} disconnected\n",
+                    clientId);
+            }
+            else
+            {
+                std::cout << std::format(
+                    "RECV::THREAD::ERROR | client {} | WSA error: {}\n",
+                    clientId,
+                    error);
+            }
+
             {
                 std::lock_guard<std::mutex> lock(playersMutex);
 
@@ -396,12 +411,14 @@ void inputHandler()
             // by speed and elapsed time so movement speed is
             // frame-rate/tick-rate independent.
             vec3 direction = directionVector(playerInput.m_movement, playerInput.m_yaw);
+            
             currentPlayer.m_position = currentPlayer.m_position + direction * SPEED * DT;
+            currentPlayer.m_yaw = playerInput.m_yaw;
 
             display = std::format("Client {} | {} | Yaw {} => Current Position ({},{},{}) ",
                                   id,
                                   movement_to_string(playerInput.m_movement),
-                                  playerInput.m_yaw,
+                                  currentPlayer.m_yaw,
                                   currentPlayer.m_position.x,
                                   currentPlayer.m_position.y,
                                   currentPlayer.m_position.z);
@@ -426,12 +443,31 @@ void broadcastHandler()
         activeClientsCopy = activeClients;
         data["players"] = activePlayers;
     }
+
     std::string data_str = data.dump();
+    std::cout << data_str << std::endl;
     for (auto &[id, clientSock] : activeClientsCopy)
     {
-        result = send(clientSock, data_str.c_str(), data_str.length(), 0);
+        // Length-prefix the message with a 4-byte big-endian size header
+        // (htonl = host-to-network byte order) so the client knows exactly
+        // how many bytes to read for this JSON payload. Without this,
+        // TCP gives no message boundaries — the client could get partial
+        // or merged messages, especially once packets are large or
+        // sends are frequent.
+        uint32_t size = htonl(static_cast<uint32_t>(data_str.size()));
+
+        // Two sends: first the fixed-size header, then the actual
+        // payload. The client is expected to always read exactly 4
+        // bytes first, then read `size` bytes for the JSON body.
+        send(clientSock, reinterpret_cast<char *>(&size), sizeof(size), 0);
+        send(clientSock, data_str.c_str(), data_str.size(), 0);
+
         if (result == SOCKET_ERROR)
         {
+            // Drop clients we can't reach: remove them from both shared
+            // maps under the lock, then close the socket outside any
+            // assumption about lock scope (closesocket doesn't need
+            // the mutex, so it's fine after the block ends).
             {
                 std::lock_guard<std::mutex> lock(playersMutex);
 
