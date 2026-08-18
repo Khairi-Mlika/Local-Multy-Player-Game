@@ -9,8 +9,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-#include "include/Player.hpp"
-
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
@@ -76,6 +74,33 @@ std::string movement_to_string(const Movement &m)
     }
     return "unknown";
 }
+
+//==============================================================
+// PLAYER CLASS IMPLEMENTATION
+//==============================================================
+struct vec3
+{
+    float x{};
+    float y{};
+    float z{};
+
+    vec3 operator+(const vec3 other)
+    {
+        return vec3{x + other.x, y + other.y, z + other.z};
+    }
+
+    vec3 operator*(float f)
+    {
+        return vec3{x * f, y * f, z * f};
+    }
+};
+
+class Player
+{
+public:
+    vec3 m_position{};
+    float m_yaw{};
+};
 
 //==============================================================
 // PLAYER INPUT CLASS IMPLEMENTATION
@@ -168,7 +193,7 @@ vec3 directionVector(const Movement &m, float yaw)
 // speed stays consistent regardless of actual tick duration.
 float SPEED = 1.0f;
 
-const float TICK_RATE = 60.0f;
+const float TICK_RATE = 0.1f;
 const float TICK_TIME = 1 / TICK_RATE;
 
 // Delta time between the last two ticks, in seconds. Recomputed every
@@ -411,7 +436,7 @@ void inputHandler()
             // by speed and elapsed time so movement speed is
             // frame-rate/tick-rate independent.
             vec3 direction = directionVector(playerInput.m_movement, playerInput.m_yaw);
-            
+
             currentPlayer.m_position = currentPlayer.m_position + direction * SPEED * DT;
             currentPlayer.m_yaw = playerInput.m_yaw;
 
@@ -445,7 +470,6 @@ void broadcastHandler()
     }
 
     std::string data_str = data.dump();
-    std::cout << data_str << std::endl;
     for (auto &[id, clientSock] : activeClientsCopy)
     {
         // Length-prefix the message with a 4-byte big-endian size header
