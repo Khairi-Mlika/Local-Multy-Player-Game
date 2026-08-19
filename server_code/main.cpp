@@ -13,6 +13,33 @@
 using json = nlohmann::json;
 
 //==============================================================
+// PLAYER CLASS IMPLEMENTATION
+//==============================================================
+struct vec3
+{
+    float x{};
+    float y{};
+    float z{};
+
+    vec3 operator+(const vec3 other)
+    {
+        return vec3{x + other.x, y + other.y, z + other.z};
+    }
+
+    vec3 operator*(float f)
+    {
+        return vec3{x * f, y * f, z * f};
+    }
+};
+
+class Player
+{
+public:
+    vec3 m_position{};
+    float m_yaw{};
+};
+
+//==============================================================
 // JSON UTILITY FUNCTIONS
 //==============================================================
 
@@ -74,33 +101,6 @@ std::string movement_to_string(const Movement &m)
     }
     return "unknown";
 }
-
-//==============================================================
-// PLAYER CLASS IMPLEMENTATION
-//==============================================================
-struct vec3
-{
-    float x{};
-    float y{};
-    float z{};
-
-    vec3 operator+(const vec3 other)
-    {
-        return vec3{x + other.x, y + other.y, z + other.z};
-    }
-
-    vec3 operator*(float f)
-    {
-        return vec3{x * f, y * f, z * f};
-    }
-};
-
-class Player
-{
-public:
-    vec3 m_position{};
-    float m_yaw{};
-};
 
 //==============================================================
 // PLAYER INPUT CLASS IMPLEMENTATION
@@ -165,16 +165,31 @@ vec3 directionVector(const Movement &m, float yaw)
     switch (m)
     {
     case Movement::MOVE_FORWARD:
-        vector = {std::sin(yawRad), 0.0f, -std::cos(yawRad)};
+        vector = {
+            std::cos(yawRad),
+            0.0f,
+            std::sin(yawRad)};
         break;
-    case Movement::MOVE_RIGHT:
-        vector = {std::cos(yawRad), 0.0f, std::sin(yawRad)};
-        break;
+
     case Movement::MOVE_BACK:
-        vector = {-std::sin(yawRad), 0.0f, +std::cos(yawRad)};
+        vector = {
+            -std::cos(yawRad),
+            0.0f,
+            -std::sin(yawRad)};
         break;
+
+    case Movement::MOVE_RIGHT:
+        vector = {
+            -std::sin(yawRad),
+            0.0f,
+            std::cos(yawRad)};
+        break;
+
     case Movement::MOVE_LEFT:
-        vector = {-std::cos(yawRad), 0.0f, -std::sin(yawRad)};
+        vector = {
+            std::sin(yawRad),
+            0.0f,
+            -std::cos(yawRad)};
         break;
     }
 
@@ -193,7 +208,7 @@ vec3 directionVector(const Movement &m, float yaw)
 // speed stays consistent regardless of actual tick duration.
 float SPEED = 1.0f;
 
-const float TICK_RATE = 0.1f;
+const float TICK_RATE = 60.f;
 const float TICK_TIME = 1 / TICK_RATE;
 
 // Delta time between the last two ticks, in seconds. Recomputed every
@@ -589,8 +604,8 @@ int main()
         }
     }
 
-    // Unreachable under the current design (the loop above never
-    // breaks), but kept as the intended graceful-shutdown path.
+    // Unreachable under the current design (the loop above never breaks),
+    // but kept as the intended graceful-shutdown path.
     acceptThread.join();
 
     closesocket(TCPsocket);

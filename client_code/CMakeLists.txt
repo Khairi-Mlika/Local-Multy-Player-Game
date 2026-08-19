@@ -14,6 +14,7 @@ include_directories(include)
 add_executable(main
     src/main.cpp
     src/glad.c
+    src/stb_image.cpp
 )
 
 # Tell CMake where GLFW is installed

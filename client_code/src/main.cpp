@@ -15,20 +15,29 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "camera.h"
+#include "stb_image.h"
+#include "mesh.h"
+#include "shader.h"
+
+#include "cubeInfo.h"
+#include "planeInfo.h"
+
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 
-struct vec3
-{
-    float x{};
-    float y{};
-    float z{};
-};
+Camera myCam{};
+float lastX = 800 / 2.0f;
+float lastY = 600 / 2.0f;
+bool firstMouse = true;
+
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
 
 class Player
 {
 public:
-    vec3 m_position{};
+    glm::vec3 m_position{};
     float m_yaw{};
 };
 
@@ -268,41 +277,89 @@ public:
     }
 };
 
-std::optional<Movement> processInput()
+bool cursorDisabled = true;
+bool escapeWasPressed = false;
+
+std::optional<Movement> processInput(GLFWwindow *window)
 {
-    std::string input;
-    std::cout << "==> ";
-    std::getline(std::cin, input);
+    bool escapePressed =
+        glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
 
-    if (input == "exit")
+    if (escapePressed && !escapeWasPressed)
     {
-        return std::nullopt;
+        cursorDisabled = !cursorDisabled;
+
+        glfwSetInputMode(
+            window,
+            GLFW_CURSOR,
+            cursorDisabled
+                ? GLFW_CURSOR_DISABLED
+                : GLFW_CURSOR_NORMAL);
+
+        firstMouse = true;
     }
 
-    if (input == "z")
-    {
+    escapeWasPressed = escapePressed;
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         return Movement::MOVE_FORWARD;
-    }
-    else if (input == "q")
-    {
-        return Movement::MOVE_LEFT;
-    }
-    else if (input == "d")
-    {
-        return Movement::MOVE_RIGHT;
-    }
-    else if (input == "s")
-    {
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
         return Movement::MOVE_BACK;
-    }
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        return Movement::MOVE_LEFT;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        return Movement::MOVE_RIGHT;
 
     return std::nullopt;
+}
+
+void framebuffer_size_callback(GLFWwindow *window, int width, int height)
+{
+    // make sure the viewport matches the new window dimensions; note that width and
+    // height will be significantly larger than specified on retina displays.
+    glViewport(0, 0, width, height);
+}
+
+void mouse_callback(GLFWwindow *window, double xposIn, double yposIn)
+{
+    if (!cursorDisabled)
+        return;
+
+    float xpos = static_cast<float>(xposIn);
+    float ypos = static_cast<float>(yposIn);
+
+    if (firstMouse)
+    {
+        lastX = xpos;
+        lastY = ypos;
+        firstMouse = false;
+        return;
+    }
+
+    float xoffset = xpos - lastX;
+    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+
+    lastX = xpos;
+    lastY = ypos;
+
+    myCam.ProcessMouseMovement(xoffset, yoffset);
+}
+
+void scroll_callback(GLFWwindow *window, double xoffset, double yoffset)
+{
+    myCam.ProcessMouseScroll(static_cast<float>(yoffset));
+}
+
+glm::mat3 calculate_normal(glm::mat4 model)
+{
+    return glm::mat3(glm::transpose(glm::inverse(model)));
 }
 
 int main()
 {
     int myId = 999;
     Player myPlayer{};
+
     NetworkingService netService{};
 
     if (!netService.is_initialized())
@@ -330,28 +387,61 @@ int main()
         return 1;
     }
 
-    std::string init = std::format("init => position : ({},{},{}) | yaw : {} ", myPlayer.m_position.x, myPlayer.m_position.y, myPlayer.m_position.z, myPlayer.m_yaw);
-    std::cout << init << std::endl;
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    json data; // id -> int | movement -> Moevment | yaw -> float
-    std::map<int, Player> players;
-
-    while (true)
+    GLFWwindow *window = glfwCreateWindow(800, 600, "test", NULL, NULL);
+    if (window == NULL)
     {
+        std::cout << "WINDOW:ERROR" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetScrollCallback(window, scroll_callback);
 
-        std::optional<Movement> movement = processInput();
-        if (!movement)
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
+        std::cout << "Failed to initialize GLAD" << std::endl;
+        return -1;
+    }
+    glViewport(0, 0, 800, 600);
+    glEnable(GL_DEPTH_TEST);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+
+    Mesh cube(cubeVertices, cubeIndices, {});
+
+    Shader lighting_shader("../shader/lighting_shader.vs", "../shader/lighting_shader.fs");
+
+    json data; // id -> int | movement -> Movement | yaw -> float
+    while (!glfwWindowShouldClose(window))
+    {
+        float currentFrame = static_cast<float>(glfwGetTime());
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        std::optional<Movement> movement = processInput(window);
+
+        myPlayer.m_yaw = myCam.Yaw;
+
+        if (movement)
         {
-            break;
-        }
+            data["id"] = myId;
+            data["movement"] = movement;
+            data["yaw"] = myPlayer.m_yaw;
 
-        data["id"] = myId;
-        data["movement"] = movement;
-        data["yaw"] = myPlayer.m_yaw;
-
-        if (!netService.sendDataToServer(data))
-        {
-            return 1;
+            if (!netService.sendDataToServer(data))
+            {
+                return 1;
+            }
         }
 
         if (!netService.recvPlayersInfo(players))
@@ -359,16 +449,37 @@ int main()
             return 1;
         }
 
-        myPlayer = players.at(myId);
-        vec3 myPosition = myPlayer.m_position;
+        myCam.Position = players.at(myId).m_position;
 
-        std::string output = std::format("position ({},{},{}) | yaw {}",
-                                         myPosition.x,
-                                         myPosition.y,
-                                         myPosition.z,
-                                         myPlayer.m_yaw);
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)800 / (float)600, 0.1f, 500.0f);
+        glm::mat4 view = myCam.GetViewMatrix();
 
-        std::cout << output << std::endl;
+        lighting_shader.use();
+
+        lighting_shader.setVec3("viewPos", myCam.Position);
+        lighting_shader.setMat4("view", view);
+        lighting_shader.setMat4("projection", projection);
+
+        lighting_shader.setVec3("light.direction", glm::vec3(10.0f));
+        lighting_shader.setVec3("light.ambient", glm::vec3(1.0f));
+        lighting_shader.setVec3("light.diffuse", glm::vec3(0.5f));
+        lighting_shader.setVec3("light.specular", glm::vec3(0.5f));
+
+        for (const auto &[id, player] : players)
+        {
+            if (id != myId)
+            {
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), player.m_position);
+
+                lighting_shader.setMat4("model", model);
+                lighting_shader.setMat3("normalMatrix", calculate_normal(model));
+
+                cube.Draw(lighting_shader);
+            }
+        }
+
+        glfwSwapBuffers(window);
+        glfwPollEvents();
     }
 
     return 0;
