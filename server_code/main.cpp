@@ -206,7 +206,7 @@ vec3 directionVector(const Movement &m, float yaw)
 
 // Units per second a player moves; multiplied by DT each tick so
 // speed stays consistent regardless of actual tick duration.
-float SPEED = 1.0f;
+float SPEED = 5.0f;
 
 const float TICK_RATE = 60.f;
 const float TICK_TIME = 1 / TICK_RATE;

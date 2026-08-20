@@ -455,6 +455,53 @@ glm::mat3 calculate_normal(glm::mat4 model)
     return glm::mat3(glm::transpose(glm::inverse(model)));
 }
 
+std::vector<Vertex> generate_Terrain(const int &height, const int &width)
+{
+    float spacing = 1.0f;
+    float tileScale = 10.0f; // ← controls how many times texture repeats
+    std::vector<Vertex> vertices;
+    for (unsigned int z = 0; z < height; z++)
+    {
+        for (unsigned int x = 0; x < width; x++)
+        {
+            float n = -0.5f;
+            vertices.push_back({glm::vec3((x - width / 2.0f) * spacing, n, (z - height / 2.0f) * spacing),
+                                glm::vec3(0.f, 1.f, 0.f),
+                                glm::vec2(
+                                    static_cast<float>(x) / tileScale,
+                                    static_cast<float>(z) / tileScale)});
+        }
+    }
+    return vertices;
+}
+
+// Generate floor indecies using its height and width and returning vector of vertex
+// ----------------------------------------------------------------------
+std::vector<unsigned int> generate_Indices(const int &height, const int &width)
+{
+    std::vector<unsigned int> indices;
+    for (unsigned int z = 0; z < height - 1; z++)
+    {
+        for (unsigned int x = 0; x < width - 1; x++)
+        {
+            int topLeft = z * width + x;
+            int topRight = topLeft + 1;
+
+            int bottomLeft = (z + 1) * width + x;
+            int bottomRight = bottomLeft + 1;
+
+            indices.push_back(topLeft);
+            indices.push_back(bottomLeft);
+            indices.push_back(topRight);
+
+            indices.push_back(topRight);
+            indices.push_back(bottomLeft);
+            indices.push_back(bottomRight);
+        }
+    }
+    return indices;
+}
+
 int main()
 {
     int myId = 999;
@@ -521,10 +568,23 @@ int main()
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
+    unsigned int cubeTexture;
+    glGenTextures(1, &cubeTexture);
+
     // Single reusable cube mesh used to represent every *other*
     // connected player (see the draw loop below — myId is skipped
     // since the local player doesn't render itself in first-person).
-    Mesh cube(cubeVertices, cubeIndices, {});
+    Mesh cube(cubeVertices, cubeIndices, {{cubeTexture, "texture_diffuse", "../assets/wall.jpg"}});
+
+    int size = 100;
+
+    std::vector<Vertex> floorVertex = generate_Terrain(size, size);
+    std::vector<unsigned int> floorIndices = generate_Indices(size, size);
+
+    unsigned int floorTexture;
+    glGenTextures(1, &floorTexture);
+
+    Mesh plane(floorVertex, floorIndices, {{floorTexture, "texture_diffuse", "../Assets/grass_floor.jpg"}});
 
     Shader lighting_shader("../shader/lighting_shader.vs", "../shader/lighting_shader.fs");
 
@@ -583,6 +643,7 @@ int main()
         // predicting movement locally.
         myCam.Position = players.at(myId).m_position;
 
+        glm::mat4 model = glm::mat4(1.0f);
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)800 / (float)600, 0.1f, 500.0f);
         glm::mat4 view = myCam.GetViewMatrix();
 
@@ -607,7 +668,7 @@ int main()
         {
             if (id != myId)
             {
-                glm::mat4 model = glm::translate(glm::mat4(1.0f), player.m_position);
+                model = glm::translate(glm::mat4(1.0f), player.m_position);
 
                 lighting_shader.setMat4("model", model);
                 lighting_shader.setMat3("normalMatrix", calculate_normal(model));
@@ -615,6 +676,12 @@ int main()
                 cube.Draw(lighting_shader);
             }
         }
+
+        model = glm::mat4(1.0f);
+
+        lighting_shader.setMat4("model", model);
+
+        plane.Draw(lighting_shader);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
